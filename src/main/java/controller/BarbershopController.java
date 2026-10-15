@@ -1,5 +1,13 @@
 package controller;
 
+import dao.BarberDAO;
+import dao.BarberDAOImpl;
+import dao.LayananDAO;
+import dao.LayananDAOImpl;
+import dao.PelangganDAO;
+import dao.PelangganDAOImpl;
+import dao.PelayananDAO;
+import dao.PelayananDAOImpl;
 import java.util.ArrayList;
 import model.Barber;
 import model.BarberBiasa;
@@ -12,37 +20,22 @@ import model.Pelayanan;
 import util.Validator;
 
 /**
- * CONTROLLER: menyimpan data (ArrayList) dan seluruh aturan bisnis.
- * Tidak ada Scanner/System.out di sini.
+ * CONTROLLER: aturan bisnis (validasi, perhitungan, perpindahan status).
+ * Data tidak lagi disimpan di ArrayList milik Controller, tetapi dibaca/ditulis
+ * ke database lewat DAO. Tidak ada Scanner/System.out di sini.
  */
 public class BarbershopController {
-    private final ArrayList<Pelanggan> daftarPelanggan = new ArrayList<>();
-    private final ArrayList<Barber> daftarBarber = new ArrayList<>();
-    private final ArrayList<Layanan> daftarLayanan = new ArrayList<>();
-    private final ArrayList<Pelayanan> daftarPelayanan = new ArrayList<>();
-    private int counterPelanggan = 0;
-    private int counterBarber = 0;
-    private int counterPelayanan = 0;
-
-    public BarbershopController() {
-        daftarLayanan.add(new Layanan("LYN001", "Potong Rambut", 30000, 30));
-        daftarLayanan.add(new Layanan("LYN002", "Cukur Jenggot", 15000, 15));
-        daftarLayanan.add(new Layanan("LYN003", "Cuci Rambut", 20000, 20));
-        daftarLayanan.add(new Layanan("LYN004", "Hair Styling", 25000, 25));
-        daftarLayanan.add(new Layanan("LYN005", "Paket Komplit", 60000, 60));
-    }
+    private final PelangganDAO pelangganDAO = new PelangganDAOImpl();
+    private final BarberDAO barberDAO = new BarberDAOImpl();
+    private final LayananDAO layananDAO = new LayananDAOImpl();
+    private final PelayananDAO pelayananDAO = new PelayananDAOImpl();
 
     // ===== PELANGGAN =====
-    public ArrayList<Pelanggan> getDaftarPelanggan() { return daftarPelanggan; }
+    public ArrayList<Pelanggan> getDaftarPelanggan() { return pelangganDAO.findAll(); }
 
     public boolean idPelangganSudahAda(String id) { return cariPelanggan(id) != null; }
 
-    public Pelanggan cariPelanggan(String id) {
-        for (Pelanggan p : daftarPelanggan) {
-            if (p.getIdPelanggan().equalsIgnoreCase(id)) return p;
-        }
-        return null;
-    }
+    public Pelanggan cariPelanggan(String id) { return pelangganDAO.findById(id); }
 
     // OVERLOADING (ID otomatis): tanpa parameter member -> Reguler
     public Pelanggan tambahPelanggan(String nama, String noHp) {
@@ -51,7 +44,7 @@ public class BarbershopController {
 
     // OVERLOADING (ID otomatis): dengan parameter member
     public Pelanggan tambahPelanggan(String nama, String noHp, boolean member) {
-        return tambahPelanggan(buatIdPelanggan(), nama, noHp, member);
+        return tambahPelanggan(pelangganDAO.generateId(), nama, noHp, member);
     }
 
     // OVERLOADING: ID diinput manual, tanpa parameter member
@@ -68,17 +61,8 @@ public class BarbershopController {
 
         // POLIMORFISME: variabel bertipe Pelanggan, objek berbeda jenis
         Pelanggan p = member ? new PelangganMember(id, nama, noHp) : new PelangganReguler(id, nama, noHp);
-        daftarPelanggan.add(p);
+        pelangganDAO.insert(p);
         return p;
-    }
-
-    private String buatIdPelanggan() {
-        String id;
-        do {
-            counterPelanggan++;
-            id = String.format("PLG%03d", counterPelanggan);
-        } while (idPelangganSudahAda(id));
-        return id;
     }
 
     public void ubahPelanggan(Pelanggan p, String nama, String noHp) {
@@ -86,35 +70,28 @@ public class BarbershopController {
         if (!Validator.isNoHpValid(noHp)) throw new IllegalArgumentException("No HP tidak valid.");
         p.setNama(nama);
         p.setNoHp(noHp);
+        pelangganDAO.update(p);
     }
 
     public void hapusPelanggan(Pelanggan p) {
-        for (Pelayanan pl : daftarPelayanan) {
-            if (pl.getIdPelanggan().equalsIgnoreCase(p.getIdPelanggan())
-                    && (pl.isAktif() || (Pelayanan.SELESAI.equals(pl.getStatusPelayanan()) && !pl.isLunas()))) {
-                throw new IllegalStateException("Pelanggan masih memiliki pelayanan yang belum tuntas.");
-            }
+        if (pelayananDAO.adaByPelanggan(p.getIdPelanggan())) {
+            throw new IllegalStateException("Pelanggan masih memiliki riwayat pelayanan sehingga tidak dapat dihapus.");
         }
-        daftarPelanggan.remove(p);
+        pelangganDAO.delete(p.getIdPelanggan());
     }
 
     public int getJumlahPelangganMember() {
         int n = 0;
-        for (Pelanggan p : daftarPelanggan) if (p.isMember()) n++;
+        for (Pelanggan p : pelangganDAO.findAll()) if (p.isMember()) n++;
         return n;
     }
 
     // ===== BARBER =====
-    public ArrayList<Barber> getDaftarBarber() { return daftarBarber; }
+    public ArrayList<Barber> getDaftarBarber() { return barberDAO.findAll(); }
 
     public boolean idBarberSudahAda(String id) { return cariBarber(id) != null; }
 
-    public Barber cariBarber(String id) {
-        for (Barber b : daftarBarber) {
-            if (b.getIdBarber().equalsIgnoreCase(id)) return b;
-        }
-        return null;
-    }
+    public Barber cariBarber(String id) { return barberDAO.findById(id); }
 
     // OVERLOADING (ID otomatis): tanpa parameter senior -> Barber biasa
     public Barber tambahBarber(String nama, int pengalaman) {
@@ -123,7 +100,7 @@ public class BarbershopController {
 
     // OVERLOADING (ID otomatis): dengan parameter senior
     public Barber tambahBarber(String nama, int pengalaman, boolean senior) {
-        return tambahBarber(buatIdBarber(), nama, pengalaman, senior);
+        return tambahBarber(barberDAO.generateId(), nama, pengalaman, senior);
     }
 
     // OVERLOADING: ID diinput manual, tanpa parameter senior
@@ -139,17 +116,8 @@ public class BarbershopController {
         if (!Validator.isPengalamanValid(pengalaman)) throw new IllegalArgumentException("Pengalaman harus 0-50 tahun.");
 
         Barber b = senior ? new BarberSenior(id, nama, pengalaman) : new BarberBiasa(id, nama, pengalaman);
-        daftarBarber.add(b);
+        barberDAO.insert(b);
         return b;
-    }
-
-    private String buatIdBarber() {
-        String id;
-        do {
-            counterBarber++;
-            id = String.format("BRB%03d", counterBarber);
-        } while (idBarberSudahAda(id));
-        return id;
     }
 
     public void ubahBarber(Barber b, String nama, int pengalaman) {
@@ -157,73 +125,61 @@ public class BarbershopController {
         if (!Validator.isPengalamanValid(pengalaman)) throw new IllegalArgumentException("Pengalaman harus 0-50 tahun.");
         b.setNama(nama);
         b.setPengalaman(pengalaman);
+        barberDAO.update(b);
     }
 
     public void hapusBarber(Barber b) {
-        if (b.getJumlahPelangganAktif() > 0) {
-            throw new IllegalStateException("Barber masih memiliki antrean aktif.");
+        if (pelayananDAO.adaByBarber(b.getIdBarber())) {
+            throw new IllegalStateException("Barber masih memiliki riwayat pelayanan sehingga tidak dapat dihapus.");
         }
-        daftarBarber.remove(b);
+        barberDAO.delete(b.getIdBarber());
     }
 
     public void ubahStatusBarber(Barber b, boolean aktif) {
-        if (!aktif && b.getJumlahPelangganAktif() > 0) {
+        Barber terbaru = barberDAO.findById(b.getIdBarber());   // data antrean paling baru dari database
+        if (!aktif && terbaru.getJumlahPelangganAktif() > 0) {
             throw new IllegalStateException("Barber masih memiliki antrean aktif, tidak bisa diubah ke tidak tersedia.");
         }
-        b.setStatusKehadiran(aktif ? Barber.HADIR_AKTIF : Barber.HADIR_TIDAK_TERSEDIA);
+        terbaru.setStatusKehadiran(aktif ? Barber.HADIR_AKTIF : Barber.HADIR_TIDAK_TERSEDIA);
+        barberDAO.update(terbaru);
+        b.setStatusKehadiran(terbaru.getStatusKehadiran());
     }
 
     public int getJumlahBarberSenior() {
         int n = 0;
-        for (Barber b : daftarBarber) if (b.isSenior()) n++;
+        for (Barber b : barberDAO.findAll()) if (b.isSenior()) n++;
         return n;
     }
 
     public int getJumlahBarberDenganStatus(String status) {
         int n = 0;
-        for (Barber b : daftarBarber) if (b.getStatusBarber().equals(status)) n++;
+        for (Barber b : barberDAO.findAll()) if (b.getStatusBarber().equals(status)) n++;
         return n;
     }
 
     // ===== LAYANAN =====
-    public ArrayList<Layanan> getDaftarLayanan() { return daftarLayanan; }
+    public ArrayList<Layanan> getDaftarLayanan() { return layananDAO.findAll(); }
 
-    public Layanan cariLayanan(String id) {
-        for (Layanan l : daftarLayanan) {
-            if (l.getIdLayanan().equalsIgnoreCase(id)) return l;
-        }
-        return null;
-    }
+    public Layanan cariLayanan(String id) { return layananDAO.findById(id); }
 
     // ===== PELAYANAN =====
-    public ArrayList<Pelayanan> getDaftarPelayanan() { return daftarPelayanan; }
+    public ArrayList<Pelayanan> getDaftarPelayanan() { return pelayananDAO.findAll(); }
 
-    public Pelayanan cariPelayanan(String id) {
-        for (Pelayanan p : daftarPelayanan) {
-            if (p.getIdPelayanan().equalsIgnoreCase(id)) return p;
-        }
-        return null;
-    }
+    public Pelayanan cariPelayanan(String id) { return pelayananDAO.findById(id); }
 
-    public Pelayanan buatPelayanan(Pelanggan pelanggan, Barber barber, Layanan layanan) {
+    public Pelayanan buatPelayanan(Pelanggan pelanggan, Barber barberDipilih, Layanan layanan) {
+        Barber barber = barberDAO.findById(barberDipilih.getIdBarber());   // status antrean terbaru
         String status = barber.getStatusBarber();
         if (Barber.TIDAK_TERSEDIA.equals(status)) throw new IllegalStateException("Barber sedang tidak tersedia.");
         if (Barber.PENUH.equals(status)) throw new IllegalStateException("Antrean barber sudah penuh.");
 
         int subtotal = layanan.getHarga() + barber.getBiayaTambahan();     // polimorfisme Barber
         int total = subtotal - pelanggan.hitungDiskon(subtotal);           // polimorfisme Pelanggan
+        int nomorAntrean = pelayananDAO.hitungByBarber(barber.getIdBarber()) + 1;
 
-        int nomorAntrean = 1;
-        for (Pelayanan p : daftarPelayanan) {
-            if (p.getIdBarber().equalsIgnoreCase(barber.getIdBarber())) nomorAntrean++;
-        }
-
-        counterPelayanan++;
-        String idPelayanan = String.format("PLY%03d", counterPelayanan);
-        Pelayanan pelayanan = new Pelayanan(idPelayanan, pelanggan.getIdPelanggan(),
+        Pelayanan pelayanan = new Pelayanan(pelayananDAO.generateId(), pelanggan.getIdPelanggan(),
                 barber.getIdBarber(), layanan.getIdLayanan(), nomorAntrean, total);
-        daftarPelayanan.add(pelayanan);
-        barber.tambahPelanggan();
+        pelayananDAO.insert(pelayanan);
         return pelayanan;
     }
 
@@ -232,6 +188,7 @@ public class BarbershopController {
             throw new IllegalStateException("Hanya pelayanan berstatus Menunggu yang dapat dimulai.");
         }
         p.setStatusPelayanan(Pelayanan.DIPROSES);
+        pelayananDAO.update(p);
     }
 
     public void selesaikanPelayanan(Pelayanan p) {
@@ -239,7 +196,7 @@ public class BarbershopController {
             throw new IllegalStateException("Hanya pelayanan berstatus Diproses yang dapat diselesaikan.");
         }
         p.setStatusPelayanan(Pelayanan.SELESAI);
-        lepasAntrean(p);
+        pelayananDAO.update(p);
     }
 
     public void bayarPelayanan(Pelayanan p, String metode) {
@@ -248,6 +205,7 @@ public class BarbershopController {
         }
         if (p.isLunas()) throw new IllegalStateException("Pelayanan sudah dibayar.");
         p.bayar(metode);
+        pelayananDAO.update(p);
     }
 
     public void batalkanPelayanan(Pelayanan p) {
@@ -255,30 +213,25 @@ public class BarbershopController {
             throw new IllegalStateException("Pelayanan berstatus " + p.getStatusPelayanan() + " tidak dapat dibatalkan.");
         }
         p.setStatusPelayanan(Pelayanan.DIBATALKAN);
-        lepasAntrean(p);
-    }
-
-    private void lepasAntrean(Pelayanan p) {
-        Barber b = cariBarber(p.getIdBarber());
-        if (b != null) b.kurangiPelanggan();
+        pelayananDAO.update(p);
     }
 
     // ===== RINGKASAN =====
     public int getJumlahPelayananDenganStatus(String status) {
         int n = 0;
-        for (Pelayanan p : daftarPelayanan) if (p.getStatusPelayanan().equals(status)) n++;
+        for (Pelayanan p : pelayananDAO.findAll()) if (p.getStatusPelayanan().equals(status)) n++;
         return n;
     }
 
     public int getTotalPendapatan() {
         int total = 0;
-        for (Pelayanan p : daftarPelayanan) if (p.isLunas()) total += p.getTotalBayar();
+        for (Pelayanan p : pelayananDAO.findAll()) if (p.isLunas()) total += p.getTotalBayar();
         return total;
     }
 
     public int getPendapatanBerdasarkanMetode(String metode) {
         int total = 0;
-        for (Pelayanan p : daftarPelayanan) {
+        for (Pelayanan p : pelayananDAO.findAll()) {
             if (p.isLunas() && p.getMetodePembayaran().equals(metode)) total += p.getTotalBayar();
         }
         return total;
@@ -286,7 +239,7 @@ public class BarbershopController {
 
     public int getTotalBelumDibayar() {
         int total = 0;
-        for (Pelayanan p : daftarPelayanan) {
+        for (Pelayanan p : pelayananDAO.findAll()) {
             if (Pelayanan.SELESAI.equals(p.getStatusPelayanan()) && !p.isLunas()) total += p.getTotalBayar();
         }
         return total;
